@@ -1,0 +1,525 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>แผนที่รายงานการตรวจสอบ</title>
+
+  <!-- Leaflet map -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+  >
+  <!-- Marker clustering -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css"
+  >
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css"
+  >
+
+  <style>
+    * { box-sizing: border-box; }
+
+    html, body, #map {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+
+    #panel {
+      position: absolute;
+      z-index: 1000;
+      top: 12px;
+      left: 60px;
+      width: min(430px, calc(100vw - 84px));
+      max-height: calc(100vh - 30px);
+      overflow-y: auto;
+      padding: 16px;
+      background: rgba(255, 255, 255, 0.97);
+      border-radius: 12px;
+      box-shadow: 0 2px 14px #0003;
+    }
+
+    h1 {
+      margin: 0 0 5px;
+      font-size: 19px;
+    }
+
+    .subtitle {
+      margin: 0 0 12px;
+      color: #666;
+      font-size: 13px;
+    }
+
+    .filters {
+      display: grid;
+      gap: 8px;
+    }
+
+    input, select, button {
+      width: 100%;
+      min-height: 38px;
+      padding: 8px 10px;
+      border: 1px solid #ccc;
+      border-radius: 7px;
+      background: white;
+      font: inherit;
+    }
+
+    button {
+      cursor: pointer;
+      border-color: #1677d2;
+      background: #1677d2;
+      color: white;
+      font-weight: 600;
+    }
+
+    button:hover { background: #095eae; }
+
+    #summary {
+      margin-top: 12px;
+      color: #1267ad;
+      font-weight: 700;
+    }
+
+    #details {
+      margin-top: 5px;
+      color: #555;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    #error {
+      margin-top: 10px;
+      color: #b00020;
+      white-space: pre-wrap;
+      font-size: 13px;
+    }
+
+    .legend {
+      position: absolute;
+      z-index: 1000;
+      right: 12px;
+      bottom: 20px;
+      padding: 11px 14px;
+      border-radius: 10px;
+      background: rgba(255, 255, 255, 0.96);
+      box-shadow: 0 2px 12px #0003;
+      font-size: 13px;
+    }
+
+    .legend-dot {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      margin-right: 6px;
+      border: 2px solid white;
+      border-radius: 50%;
+      background: #1685d1;
+      box-shadow: 0 0 2px #333;
+      vertical-align: -1px;
+    }
+
+    .map-marker {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border: 2px solid white;
+      border-radius: 50%;
+      background: #1685d1;
+      color: white;
+      box-shadow: 0 1px 5px #3338;
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .popup {
+      min-width: 220px;
+      max-width: 330px;
+      line-height: 1.5;
+      overflow-wrap: anywhere;
+    }
+
+    .popup-title {
+      margin-bottom: 6px;
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .popup-row { margin-top: 3px; }
+    .popup-label { font-weight: 700; }
+
+    @media (max-width: 600px) {
+      #panel {
+        top: 8px;
+        left: 54px;
+        width: calc(100vw - 64px);
+        padding: 12px;
+      }
+
+      h1 { font-size: 17px; }
+      .legend { right: 8px; bottom: 10px; }
+    }
+  </style>
+</head>
+
+<body>
+  <div id="map"></div>
+
+  <section id="panel">
+    <h1>แผนที่รายงานการตรวจสอบ</h1>
+    <p class="subtitle">ข้อมูลจาก Google Sheets · คลิกหมุดเพื่อดูรายละเอียด</p>
+
+    <div class="filters">
+      <input
+        id="search"
+        type="search"
+        placeholder="ค้นหารหัสงาน ชื่อรายงาน หรือหน่วยรับตรวจ"
+      >
+
+      <select id="typeFilter">
+        <option value="">ประเภทจัดซื้อจัดจ้าง: ทั้งหมด</option>
+      </select>
+
+      <select id="observationFilter">
+        <option value="">ข้อสังเกต: ทั้งหมด</option>
+      </select>
+
+      <button id="resetButton" type="button">ล้างตัวกรอง</button>
+    </div>
+
+    <div id="summary">กำลังโหลดข้อมูลจากชีต…</div>
+    <div id="details"></div>
+    <div id="error"></div>
+  </section>
+
+  <div class="legend">
+    <span class="legend-dot"></span>รายการจากชีต
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
+
+  <script>
+    // Google Sheet และแท็บที่ต้องการอ่าน
+    const SHEET_ID = "1zgK-gxqQWTkt59KfFM7NQr1jRpYTWNdfASLQ7a3G9Yw";
+    const SHEET_GID = "1285112231";
+
+    // ตำแหน่งเริ่มต้นของแผนที่
+    const DEFAULT_CENTER = [15.8, 102.0];
+    const DEFAULT_ZOOM = 8;
+
+    // เลขคอลัมน์เริ่มจาก 0: A=0, B=1, C=2 ...
+    // อ้างอิงลำดับหัวตารางที่ส่งมา
+    const COL = {
+      jobId: 0,               // A รหัสงาน
+      longitude: 1,           // B ลองจิจูด
+      latitude: 2,             // C ละติจูด
+      reportName: 3,           // D ชื่อรายงาน
+      procurementType: 4,      // E ประเภทจัดซื้อจัดจ้าง
+      otherItem: 5,            // F รายการอื่น
+      contractValue: 6,        // G มูลค่าตามสัญญา
+      unitCode: 7,             // H รหัสหน่วยรับตรวจ
+      unitName: 8,             // I ชื่อหน่วยรับตรวจ
+      observation: 9,          // J ข้อสังเกต
+      defectType: 10,          // K ประเภทข้อบกพร่อง
+      defectOther: 11,         // L คำอธิบายเพิ่มเติม
+      cause: 12,               // M สาเหตุ
+      recommendation: 13,      // N ลักษณะข้อเสนอแนะ
+      recommendationOther: 14, // O คำอธิบายข้อเสนอแนะกรณีอื่น
+      auditLaw: 15,            // P มาตราที่แจ้งผลตรวจสอบ
+      disciplineLaw: 16        // Q มาตราวินัยการเงินการคลัง
+    };
+
+    const map = L.map("map").setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap"
+    }).addTo(map);
+
+    const markerGroup = L.markerClusterGroup();
+    map.addLayer(markerGroup);
+
+    let allRecords = [];
+
+    const searchInput = document.getElementById("search");
+    const typeFilter = document.getElementById("typeFilter");
+    const observationFilter = document.getElementById("observationFilter");
+    const summary = document.getElementById("summary");
+    const details = document.getElementById("details");
+    const errorBox = document.getElementById("error");
+
+    function cellValue(row, columnIndex) {
+      const cell = row?.c?.[columnIndex];
+      if (!cell) return "";
+
+      // f คือค่าที่จัดรูปแบบแล้ว; v คือค่าดิบจาก Google Sheets
+      const value = cell.f !== null && cell.f !== undefined ? cell.f : cell.v;
+      return value === null || value === undefined ? "" : String(value).trim();
+    }
+
+    function parseCoordinate(value) {
+      // รองรับพิกัดที่เป็นตัวเลข หรือข้อความที่มี comma คั่นหลักพัน
+      const normalized = String(value ?? "")
+        .replace(/,/g, "")
+        .trim();
+
+      if (!normalized) return NaN;
+      return Number(normalized);
+    }
+
+    function escapeHtml(value) {
+      return String(value ?? "").replace(/[&<>"']/g, character => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#039;"
+      })[character]);
+    }
+
+    function buildRecord(row, rowNumber) {
+      const lat = parseCoordinate(cellValue(row, COL.latitude));
+      const lng = parseCoordinate(cellValue(row, COL.longitude));
+
+      return {
+        rowNumber,
+        lat,
+        lng,
+        jobId: cellValue(row, COL.jobId),
+        reportName: cellValue(row, COL.reportName),
+        procurementType: cellValue(row, COL.procurementType),
+        otherItem: cellValue(row, COL.otherItem),
+        contractValue: cellValue(row, COL.contractValue),
+        unitCode: cellValue(row, COL.unitCode),
+        unitName: cellValue(row, COL.unitName),
+        observation: cellValue(row, COL.observation),
+        defectType: cellValue(row, COL.defectType),
+        defectOther: cellValue(row, COL.defectOther),
+        cause: cellValue(row, COL.cause),
+        recommendation: cellValue(row, COL.recommendation),
+        recommendationOther: cellValue(row, COL.recommendationOther),
+        auditLaw: cellValue(row, COL.auditLaw),
+        disciplineLaw: cellValue(row, COL.disciplineLaw)
+      };
+    }
+
+    function fillSelect(selectElement, values, firstOptionText) {
+      selectElement.replaceChildren();
+
+      const firstOption = document.createElement("option");
+      firstOption.value = "";
+      firstOption.textContent = firstOptionText;
+      selectElement.appendChild(firstOption);
+
+      const uniqueValues = [...new Set(values.filter(value => value))]
+        .sort((a, b) => a.localeCompare(b, "th"));
+
+      uniqueValues.forEach(value => {
+        const option = document.createElement("option");
+        option.value = value;
+        option.textContent = value;
+        selectElement.appendChild(option);
+      });
+    }
+
+    function createPopup(record) {
+      const fields = [
+        ["รหัสงาน", record.jobId],
+        ["ชื่อรายงาน", record.reportName],
+        ["ประเภทจัดซื้อจัดจ้าง", record.procurementType],
+        ["รายการอื่น", record.otherItem],
+        ["มูลค่าตามสัญญา", record.contractValue ? record.contractValue + " บาท" : ""],
+        ["รหัสหน่วยรับตรวจ", record.unitCode],
+        ["ชื่อหน่วยรับตรวจ", record.unitName],
+        ["ข้อสังเกต", record.observation],
+        ["ประเภทข้อบกพร่อง", record.defectType],
+        ["รายละเอียดข้อบกพร่อง", record.defectOther],
+        ["สาเหตุ", record.cause],
+        ["ลักษณะข้อเสนอแนะ", record.recommendation],
+        ["รายละเอียดข้อเสนอแนะ", record.recommendationOther],
+        ["มาตราที่แจ้งผลตรวจสอบ", record.auditLaw],
+        ["มาตราวินัยการเงินการคลัง", record.disciplineLaw]
+      ];
+
+      const rows = fields
+        .filter(([, value]) => value)
+        .map(([label, value]) =>
+          `<div class="popup-row"><span class="popup-label">${escapeHtml(label)}:</span> ${escapeHtml(value)}</div>`
+        )
+        .join("");
+
+      return `
+        <div class="popup">
+          <div class="popup-title">${escapeHtml(record.reportName || "รายการตรวจสอบ")}</div>
+          ${rows || "ไม่มีรายละเอียดเพิ่มเติม"}
+        </div>
+      `;
+    }
+
+    function getFilteredRecords() {
+      const query = searchInput.value.trim().toLocaleLowerCase("th");
+      const selectedType = typeFilter.value;
+      const selectedObservation = observationFilter.value;
+
+      return allRecords.filter(record => {
+        const searchableText = [
+          record.jobId,
+          record.reportName,
+          record.unitCode,
+          record.unitName,
+          record.procurementType,
+          record.otherItem,
+          record.observation,
+          record.defectType,
+          record.cause,
+          record.recommendation
+        ].join(" ").toLocaleLowerCase("th");
+
+        const matchesSearch = !query || searchableText.includes(query);
+        const matchesType =
+          !selectedType || record.procurementType === selectedType;
+        const matchesObservation =
+          !selectedObservation || record.observation === selectedObservation;
+
+        return matchesSearch && matchesType && matchesObservation;
+      });
+    }
+
+    function renderMap() {
+      const visibleRecords = getFilteredRecords();
+      markerGroup.clearLayers();
+
+      visibleRecords.forEach(record => {
+        const icon = L.divIcon({
+          className: "",
+          html: '<div class="map-marker">•</div>',
+          iconSize: [32, 32],
+          iconAnchor: [16, 16]
+        });
+
+        const marker = L.marker([record.lat, record.lng], {
+          icon,
+          title: record.reportName || record.jobId || "รายการตรวจสอบ"
+        });
+
+        marker.bindPopup(createPopup(record), { maxWidth: 360 });
+        markerGroup.addLayer(marker);
+      });
+
+      summary.textContent =
+        `แสดง ${visibleRecords.length.toLocaleString("th-TH")} จาก ` +
+        `${allRecords.length.toLocaleString("th-TH")} รายการที่มีพิกัด`;
+
+      details.textContent =
+        "ค้นหาได้จากรหัสงาน ชื่อรายงาน หน่วยรับตรวจ ประเภทจัดซื้อจัดจ้าง และข้อสังเกต";
+
+      if (visibleRecords.length > 0 && !searchInput.value &&
+          !typeFilter.value && !observationFilter.value) {
+        const bounds = L.latLngBounds(
+          visibleRecords.map(record => [record.lat, record.lng])
+        );
+        map.fitBounds(bounds, { padding: [35, 35], maxZoom: 12 });
+      }
+    }
+
+    function showError(message) {
+      errorBox.textContent = message;
+      summary.textContent = "";
+    }
+
+    // Google Visualization API จะเรียกฟังก์ชันนี้เมื่ออ่านชีตสำเร็จ
+    window.handleSheet = function(response) {
+      if (!response || response.status === "error") {
+        const message =
+          response?.errors?.map(error => error.detailed_message || error.message).join("\n")
+          || "ไม่สามารถอ่านข้อมูลจาก Google Sheets ได้";
+        showError(message);
+        return;
+      }
+
+      const rows = response.table?.rows || [];
+      const records = rows.map((row, index) => buildRecord(row, index + 2));
+
+      const validRecords = records.filter(record =>
+        Number.isFinite(record.lat) &&
+        Number.isFinite(record.lng) &&
+        Math.abs(record.lat) <= 90 &&
+        Math.abs(record.lng) <= 180
+      );
+
+      const invalidCoordinateCount = records.length - validRecords.length;
+      allRecords = validRecords;
+
+      fillSelect(
+        typeFilter,
+        allRecords.map(record => record.procurementType),
+        "ประเภทจัดซื้อจัดจ้าง: ทั้งหมด"
+      );
+
+      fillSelect(
+        observationFilter,
+        allRecords.map(record => record.observation),
+        "ข้อสังเกต: ทั้งหมด"
+      );
+
+      if (allRecords.length === 0) {
+        showError(
+          "โหลดชีตได้ แต่ไม่พบแถวที่มีพิกัดใช้งานได้\n" +
+          "ตรวจสอบว่าคอลัมน์ B เป็นลองจิจูด และคอลัมน์ C เป็นละติจูด"
+        );
+        return;
+      }
+
+      if (invalidCoordinateCount > 0) {
+        details.textContent =
+          `ข้าม ${invalidCoordinateCount} แถวที่ไม่มีพิกัดหรือพิกัดไม่ถูกต้อง`;
+      }
+
+      errorBox.textContent = "";
+      renderMap();
+    };
+
+    function loadSheet() {
+      const callbackName = "handleSheet";
+      const tqx = encodeURIComponent(`out:json;responseHandler:${callbackName}`);
+      const url =
+        `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq` +
+        `?gid=${SHEET_GID}&tqx=${tqx}`;
+
+      const script = document.createElement("script");
+      script.src = url;
+      script.async = true;
+
+      script.onerror = () => {
+        showError(
+          "โหลด Google Sheet ไม่สำเร็จ\n" +
+          "ตรวจสอบว่าเปิดสิทธิ์ให้ผู้มีลิงก์ดูได้ และ GID ของแท็บถูกต้อง"
+        );
+      };
+
+      document.body.appendChild(script);
+    }
+
+    searchInput.addEventListener("input", renderMap);
+    typeFilter.addEventListener("change", renderMap);
+    observationFilter.addEventListener("change", renderMap);
+
+    document.getElementById("resetButton").addEventListener("click", () => {
+      searchInput.value = "";
+      typeFilter.value = "";
+      observationFilter.value = "";
+      renderMap();
+    });
+
+    loadSheet();
+  </script>
+</body>
+</html>
